@@ -8,7 +8,10 @@ from sqlite3 import IntegrityError
 
 from database import get_conn, get_file_path, get_thumbnail_path
 from dependencies import get_current_user
-from schemas import FileCreate, FileContentUpdate, FileDetail, FileOut, FileRename
+from schemas import (
+    FileCreate, FileContentUpdate, FileDetail, FileOut, FileRename,
+    MAX_THUMBNAIL_BYTES,
+)
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -50,7 +53,14 @@ def _read_content(user_id: int, file_idx: int) -> str:
 
 
 def _write_content(user_id: int, file_idx: int, content: str):
-    get_file_path(user_id, file_idx).write_text(content, encoding="utf-8")
+    final_path = get_file_path(user_id, file_idx)
+    tmp_path = final_path.with_suffix(".tmp")
+    try:
+        tmp_path.write_text(content, encoding="utf-8")
+        tmp_path.replace(final_path)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
 
 
 def _delete_content(user_id: int, file_idx: int):
@@ -194,7 +204,21 @@ def get_file_thumbnail(file_id: str, user: dict = Depends(get_current_user)):
 
 @router.put("/{file_id}/thumbnail", status_code=status.HTTP_204_NO_CONTENT)
 async def save_file_thumbnail(file_id: str, request: Request, user: dict = Depends(get_current_user)):
+    content_type = request.headers.get("content-type", "")
+    if not content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Thumbnail must be an image",
+        )
+
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > MAX_THUMBNAIL_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Thumbnail too large")
+
+    body = await request.body()
+    if len(body) > MAX_THUMBNAIL_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Thumbnail too large")
+
     with get_conn() as conn:
         row = _require_file(conn, file_id, user["id"])
-    body = await request.body()
     get_thumbnail_path(user["id"], row["idx"]).write_bytes(body)

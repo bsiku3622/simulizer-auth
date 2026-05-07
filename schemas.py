@@ -1,6 +1,9 @@
 from pydantic import BaseModel, field_validator
 from typing import Optional
 
+MAX_CONTENT_BYTES = 5 * 1024 * 1024  # 5 MB
+MAX_THUMBNAIL_BYTES = 2 * 1024 * 1024  # 2 MB
+
 
 class UserOut(BaseModel):
     id: int
@@ -30,6 +33,13 @@ class FileCreate(BaseModel):
             raise ValueError("name must be 50 characters or fewer")
         return v
 
+    @field_validator("content")
+    @classmethod
+    def validate_content(cls, v: str) -> str:
+        if len(v.encode()) > MAX_CONTENT_BYTES:
+            raise ValueError("content exceeds 5 MB limit")
+        return v
+
 
 class FileOut(BaseModel):
     idx: int
@@ -46,6 +56,13 @@ class FileDetail(FileOut):
 
 class FileContentUpdate(BaseModel):
     content: str
+
+    @field_validator("content")
+    @classmethod
+    def validate_content(cls, v: str) -> str:
+        if len(v.encode()) > MAX_CONTENT_BYTES:
+            raise ValueError("content exceeds 5 MB limit")
+        return v
 
 
 class FileRename(BaseModel):

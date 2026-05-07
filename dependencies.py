@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import Cookie, HTTPException, status
 from jose import JWTError
 
@@ -9,7 +11,7 @@ def get_current_user(token: str | None = Cookie(default=None, alias="token")) ->
     if token is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
     try:
-        user_id = decode_jwt(token)
+        user_id, token_iat = decode_jwt(token)
     except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
@@ -20,6 +22,11 @@ def get_current_user(token: str | None = Cookie(default=None, alias="token")) ->
 
     if row is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+
+    if row["token_issued_at"]:
+        valid_from = datetime.fromisoformat(row["token_issued_at"]).replace(tzinfo=timezone.utc)
+        if token_iat < valid_from:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token revoked")
 
     return dict(row)
 
