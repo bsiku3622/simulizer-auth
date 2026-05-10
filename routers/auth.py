@@ -75,13 +75,25 @@ def _validated_return_to(return_to: str | None) -> str | None:
     return None
 
 
+_COOKIE_SAMESITE = "none" if COOKIE_SECURE else "lax"
+
+
 def _set_token_cookie(response: Response, token: str):
     response.set_cookie(
         key="token", value=token,
         httponly=True, secure=COOKIE_SECURE,
-        samesite="none" if COOKIE_SECURE else "lax",
+        samesite=_COOKIE_SAMESITE,
         domain=COOKIE_DOMAIN,
         max_age=TOKEN_EXPIRE_SECONDS,
+    )
+
+
+def _delete_token_cookie(response: Response):
+    response.delete_cookie(
+        key="token",
+        httponly=True, secure=COOKIE_SECURE,
+        samesite=_COOKIE_SAMESITE,
+        domain=COOKIE_DOMAIN,
     )
 
 
@@ -89,9 +101,18 @@ def _set_recovery_cookie(response: Response, token: str):
     response.set_cookie(
         key="recovery_token", value=token,
         httponly=True, secure=COOKIE_SECURE,
-        samesite="none" if COOKIE_SECURE else "lax",
+        samesite=_COOKIE_SAMESITE,
         domain=COOKIE_DOMAIN,
         max_age=RECOVERY_TOKEN_EXPIRE_SECONDS,
+    )
+
+
+def _delete_recovery_cookie(response: Response):
+    response.delete_cookie(
+        key="recovery_token",
+        httponly=True, secure=COOKIE_SECURE,
+        samesite=_COOKIE_SAMESITE,
+        domain=COOKIE_DOMAIN,
     )
 
 
@@ -120,7 +141,7 @@ def _handle_delete_flow(google_id: str, frontend_url: str) -> RedirectResponse:
             (row["id"],),
         )
     response = RedirectResponse(f"{frontend_url}/login?account_deleted=1")
-    response.delete_cookie("token")
+    _delete_token_cookie(response)
     return response
 
 
@@ -227,7 +248,7 @@ async def google_callback(request: Request, code: str | None = None, error: str 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout(response: Response, token: str | None = Cookie(default=None, alias="token")):
-    response.delete_cookie("token")
+    _delete_token_cookie(response)
     if token:
         try:
             user_id, _ = decode_jwt(token)
@@ -262,7 +283,7 @@ def recover_confirm(response: Response, user: dict = Depends(get_recovery_user))
         )
     token = create_jwt(user["id"])
     _set_token_cookie(response, token)
-    response.delete_cookie("recovery_token")
+    _delete_recovery_cookie(response)
 
 
 @router.post("/recover/cancel", status_code=status.HTTP_204_NO_CONTENT)
@@ -270,4 +291,4 @@ def recover_cancel(response: Response, user: dict = Depends(get_recovery_user)):
     with get_conn() as conn:
         conn.execute("DELETE FROM users WHERE id = ?", (user["id"],))
     _delete_user_files(user["id"])
-    response.delete_cookie("recovery_token")
+    _delete_recovery_cookie(response)
