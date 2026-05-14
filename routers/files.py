@@ -7,10 +7,10 @@ from fastapi.responses import FileResponse
 from sqlite3 import IntegrityError
 
 from database import get_conn, get_file_path, get_thumbnail_path
-from dependencies import get_current_user
+from dependencies import get_current_user, get_optional_user
 from schemas import (
     FileCreate, FileContentUpdate, FileDetail, FileOut, FileRename,
-    MAX_THUMBNAIL_BYTES,
+    FileVisibilityUpdate, MAX_THUMBNAIL_BYTES,
 )
 
 router = APIRouter(prefix="/files", tags=["files"])
@@ -26,11 +26,23 @@ def _row_to_out(row) -> FileOut:
     return FileOut(
         idx=row["idx"],
         id=row["id"],
+        author_id=row["author_id"],
         name=row["name"],
         visibility=row["visibility"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
+
+
+def _require_readable_file(conn, file_id: str, user: dict | None):
+    row = conn.execute("SELECT * FROM files WHERE id = ?", (file_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+    if user is not None and row["author_id"] == user["id"]:
+        return row
+    if row["visibility"] == "link":
+        return row
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
 
 
 def _require_file(conn, file_id: str, author_id: int):
@@ -102,10 +114,10 @@ def create_file(body: FileCreate, user: dict = Depends(get_current_user)):
 
 
 @router.get("/{file_id}", response_model=FileDetail)
-def get_file(file_id: str, user: dict = Depends(get_current_user)):
+def get_file(file_id: str, user: dict | None = Depends(get_optional_user)):
     with get_conn() as conn:
-        row = _require_file(conn, file_id, user["id"])
-    content = _read_content(user["id"], row["idx"])
+        row = _require_readable_file(conn, file_id, user)
+    content = _read_content(row["author_id"], row["idx"])
     return FileDetail(**dict(row), content=content)
 
 
@@ -151,10 +163,26 @@ def rename_file(file_id: str, body: FileRename, user: dict = Depends(get_current
     return _row_to_out(row)
 
 
+@router.patch("/{file_id}/visibility", response_model=FileOut)
+def update_file_visibility(
+    file_id: str,
+    body: FileVisibilityUpdate,
+    user: dict = Depends(get_current_user),
+):
+    with get_conn() as conn:
+        row = _require_file(conn, file_id, user["id"])
+        conn.execute(
+            "UPDATE files SET visibility = ?, updated_at = datetime('now') WHERE idx = ?",
+            (body.visibility, row["idx"]),
+        )
+        row = conn.execute("SELECT * FROM files WHERE idx = ?", (row["idx"],)).fetchone()
+    return _row_to_out(row)
+
+
 @router.post("/{file_id}/duplicate", response_model=FileDetail, status_code=status.HTTP_201_CREATED)
 def duplicate_file(file_id: str, user: dict = Depends(get_current_user)):
     with get_conn() as conn:
-        src = _require_file(conn, file_id, user["id"])
+        src = _require_readable_file(conn, file_id, user)
 
         base_name = src["name"]
         candidate = f"{base_name} copy"
@@ -170,7 +198,7 @@ def duplicate_file(file_id: str, user: dict = Depends(get_current_user)):
             counter += 1
 
         try:
-            content = _read_content(user["id"], src["idx"])
+            content = _read_content(src["author_id"], src["idx"])
             pub_id = _generate_file_id()
             conn.execute(
                 "INSERT INTO files (id, author_id, name) VALUES (?, ?, ?)",
@@ -186,17 +214,17 @@ def duplicate_file(file_id: str, user: dict = Depends(get_current_user)):
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Could not duplicate file",
             )
-    src_thumb = get_thumbnail_path(user["id"], src["idx"])
+    src_thumb = get_thumbnail_path(src["author_id"], src["idx"])
     if src_thumb.exists():
         shutil.copy2(src_thumb, get_thumbnail_path(user["id"], new_row["idx"]))
     return FileDetail(**dict(new_row), content=content)
 
 
 @router.get("/{file_id}/thumbnail")
-def get_file_thumbnail(file_id: str, user: dict = Depends(get_current_user)):
+def get_file_thumbnail(file_id: str, user: dict | None = Depends(get_optional_user)):
     with get_conn() as conn:
-        row = _require_file(conn, file_id, user["id"])
-    path = get_thumbnail_path(user["id"], row["idx"])
+        row = _require_readable_file(conn, file_id, user)
+    path = get_thumbnail_path(row["author_id"], row["idx"])
     if not path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No thumbnail")
     return FileResponse(path, media_type="image/png")

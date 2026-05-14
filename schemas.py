@@ -1,5 +1,5 @@
 from pydantic import BaseModel, field_validator
-from typing import Optional
+from typing import Literal, Optional
 
 MAX_CONTENT_BYTES = 5 * 1024 * 1024  # 5 MB
 MAX_THUMBNAIL_BYTES = 2 * 1024 * 1024  # 2 MB
@@ -44,6 +44,7 @@ class FileCreate(BaseModel):
 class FileOut(BaseModel):
     idx: int
     id: str
+    author_id: int
     name: str
     visibility: str
     created_at: str
@@ -77,3 +78,7 @@ class FileRename(BaseModel):
         if len(v) > 50:
             raise ValueError("name must be 50 characters or fewer")
         return v
+
+
+class FileVisibilityUpdate(BaseModel):
+    visibility: Literal["private", "link"]

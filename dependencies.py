@@ -7,13 +7,8 @@ from auth import decode_jwt, decode_recovery_jwt
 from database import get_conn
 
 
-def get_current_user(token: str | None = Cookie(default=None, alias="token")) -> dict:
-    if token is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-    try:
-        user_id, token_iat = decode_jwt(token)
-    except JWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+def _resolve_user_from_token(token: str) -> dict:
+    user_id, token_iat = decode_jwt(token)
 
     with get_conn() as conn:
         row = conn.execute(
@@ -29,6 +24,24 @@ def get_current_user(token: str | None = Cookie(default=None, alias="token")) ->
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token revoked")
 
     return dict(row)
+
+
+def get_current_user(token: str | None = Cookie(default=None, alias="token")) -> dict:
+    if token is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    try:
+        return _resolve_user_from_token(token)
+    except JWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+
+def get_optional_user(token: str | None = Cookie(default=None, alias="token")) -> dict | None:
+    if token is None:
+        return None
+    try:
+        return _resolve_user_from_token(token)
+    except (JWTError, HTTPException):
+        return None
 
 
 def get_recovery_user(recovery_token: str | None = Cookie(default=None, alias="recovery_token")) -> dict:
