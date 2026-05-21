@@ -8,7 +8,6 @@ BACKEND_URL: str = os.environ["BACKEND_URL"]
 DEV_BACKEND_URL: str = os.getenv("DEV_BACKEND_URL") or BACKEND_URL
 FRONTEND_URL: str = os.environ["FRONTEND_URL"]
 DEV_FRONTEND_URL: str = os.getenv("DEV_FRONTEND_URL") or FRONTEND_URL
-ALLOWED_DOMAIN: str = os.environ["ALLOWED_DOMAIN"]
 COOKIE_DOMAIN: str | None = os.getenv("COOKIE_DOMAIN") or None
 
 TOKEN_EXPIRE_DAYS: int = int(os.getenv("TOKEN_EXPIRE_DAYS", "7"))

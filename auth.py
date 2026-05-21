@@ -9,7 +9,6 @@ from config import (
     GOOGLE_CLIENT_SECRET,
     JWT_SECRET,
     BACKEND_URL,
-    ALLOWED_DOMAIN,
     TOKEN_EXPIRE_DAYS,
     RECOVERY_TOKEN_EXPIRE_MINUTES,
 )
@@ -29,7 +28,6 @@ def google_oauth_url(state: str | None = None, prompt: str | None = None, backen
         "redirect_uri": f"{backend_url}/auth/google/callback",
         "response_type": "code",
         "scope": "openid email profile",
-        "hd": ALLOWED_DOMAIN,
         "access_type": "online",
     }
     if state:
@@ -63,10 +61,6 @@ async def get_google_userinfo(access_token: str) -> dict:
         )
         resp.raise_for_status()
         return resp.json()
-
-
-def validate_domain(email: str) -> bool:
-    return email.endswith(f"@{ALLOWED_DOMAIN}")
 
 
 def create_jwt(user_id: int) -> str:

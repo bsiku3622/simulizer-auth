@@ -18,7 +18,6 @@ from auth import (
     exchange_code,
     get_google_userinfo,
     google_oauth_url,
-    validate_domain,
 )
 from config import BACKEND_URL, COOKIE_DOMAIN, DEV_BACKEND_URL, DEV_FRONTEND_URL, FRONTEND_URL, SOFT_DELETE_RETENTION_DAYS
 from database import FILE_STORAGE_PATH, get_conn
@@ -261,8 +260,6 @@ async def google_callback(request: Request, code: str | None = None, error: str 
         return RedirectResponse(f"{frontend_url}/login?error=oauth_failed")
 
     email: str = userinfo.get("email", "")
-    if not validate_domain(email):
-        return RedirectResponse(f"{frontend_url}/login?error=unauthorized_domain")
 
     google_id = userinfo["sub"]
 
