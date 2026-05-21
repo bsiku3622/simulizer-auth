@@ -48,3 +48,6 @@ def health():
 def main(port: int):
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=port, proxy_headers=True, forwarded_allow_ips="*")
+
+if __name__ == "__main__":
+    main()
