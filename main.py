@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 
+import click
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -11,6 +12,7 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from database import run_migrations
 from routers import auth, files
+
 
 
 @asynccontextmanager
@@ -27,7 +29,7 @@ app.add_middleware(SlowAPIMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:6001", "http://localhost:8001", "https://simulizer.net", "https://auth.simulizer.net"],
+    allow_origins=["http://localhost:3000", "http://localhost:6001", "http://localhost:8001", "https://simulizer.net", "https://www.simulizer.net", "https://auth.simulizer.net"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -41,7 +43,8 @@ app.include_router(files.router)
 def health():
     return {"status": "ok"}
 
-
-if __name__ == "__main__":
+@click.command()
+@click.option('-p', '--port', default=6001, type=int, help='Port to run the server on')
+def main(port: int):
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8001)
+    uvicorn.run("main:app", host="0.0.0.0", port=port, proxy_headers=True, forwarded_allow_ips="*")
