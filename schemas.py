@@ -4,6 +4,8 @@ from typing import Literal, Optional
 MAX_CONTENT_BYTES = 5 * 1024 * 1024  # 5 MB
 MAX_THUMBNAIL_BYTES = 2 * 1024 * 1024  # 2 MB
 
+FileType = Literal["blockfile", "clangfile"]
+
 
 class UserOut(BaseModel):
     id: int
@@ -21,6 +23,7 @@ class RecoveryUserOut(UserOut):
 
 class FileCreate(BaseModel):
     name: str
+    type: FileType = "blockfile"
     content: str = "{}"
 
     @field_validator("name")
@@ -46,7 +49,9 @@ class FileOut(BaseModel):
     id: str
     author_id: int
     name: str
+    type: FileType
     visibility: str
+    thumbnail_custom: bool
     created_at: str
     updated_at: str
 

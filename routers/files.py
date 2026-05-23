@@ -3,7 +3,7 @@ import shutil
 import string
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from sqlite3 import IntegrityError
 
 from database import get_conn, get_file_path, get_thumbnail_path
@@ -28,7 +28,9 @@ def _row_to_out(row) -> FileOut:
         id=row["id"],
         author_id=row["author_id"],
         name=row["name"],
+        type=row["type"],
         visibility=row["visibility"],
+        thumbnail_custom=bool(row["thumbnail_custom"]),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -97,8 +99,8 @@ def create_file(body: FileCreate, user: dict = Depends(get_current_user)):
         try:
             pub_id = _generate_file_id()
             conn.execute(
-                "INSERT INTO files (id, author_id, name) VALUES (?, ?, ?)",
-                (pub_id, user["id"], body.name),
+                "INSERT INTO files (id, author_id, name, type) VALUES (?, ?, ?, ?)",
+                (pub_id, user["id"], body.name, body.type),
             )
             row = conn.execute(
                 "SELECT * FROM files WHERE author_id = ? AND name = ?",
@@ -110,7 +112,7 @@ def create_file(body: FileCreate, user: dict = Depends(get_current_user)):
                 status_code=status.HTTP_409_CONFLICT,
                 detail="A file with that name already exists",
             )
-    return FileDetail(**dict(row), content=body.content)
+    return FileDetail(**_row_to_out(row).model_dump(), content=body.content)
 
 
 @router.get("/{file_id}", response_model=FileDetail)
@@ -118,7 +120,7 @@ def get_file(file_id: str, user: dict | None = Depends(get_optional_user)):
     with get_conn() as conn:
         row = _require_readable_file(conn, file_id, user)
     content = _read_content(row["author_id"], row["idx"])
-    return FileDetail(**dict(row), content=content)
+    return FileDetail(**_row_to_out(row).model_dump(), content=content)
 
 
 @router.put("/{file_id}", response_model=FileOut)
@@ -140,9 +142,10 @@ def delete_file(file_id: str, user: dict = Depends(get_current_user)):
         row = _require_file(conn, file_id, user["id"])
         conn.execute("DELETE FROM files WHERE idx = ?", (row["idx"],))
     _delete_content(user["id"], row["idx"])
-    thumb = get_thumbnail_path(user["id"], row["idx"])
-    if thumb.exists():
-        thumb.unlink()
+    for manual in (False, True):
+        p = get_thumbnail_path(user["id"], row["idx"], manual=manual)
+        if p.exists():
+            p.unlink()
 
 
 @router.patch("/{file_id}/name", response_model=FileOut)
@@ -201,8 +204,8 @@ def duplicate_file(file_id: str, user: dict = Depends(get_current_user)):
             content = _read_content(src["author_id"], src["idx"])
             pub_id = _generate_file_id()
             conn.execute(
-                "INSERT INTO files (id, author_id, name) VALUES (?, ?, ?)",
-                (pub_id, user["id"], candidate),
+                "INSERT INTO files (id, author_id, name, type, thumbnail_custom) VALUES (?, ?, ?, ?, ?)",
+                (pub_id, user["id"], candidate, src["type"], 1 if src["thumbnail_custom"] else 0),
             )
             new_row = conn.execute(
                 "SELECT * FROM files WHERE author_id = ? AND name = ?",
@@ -214,24 +217,101 @@ def duplicate_file(file_id: str, user: dict = Depends(get_current_user)):
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Could not duplicate file",
             )
-    src_thumb = get_thumbnail_path(src["author_id"], src["idx"])
-    if src_thumb.exists():
-        shutil.copy2(src_thumb, get_thumbnail_path(user["id"], new_row["idx"]))
-    return FileDetail(**dict(new_row), content=content)
+    for manual in (False, True):
+        sp = get_thumbnail_path(src["author_id"], src["idx"], manual=manual)
+        if sp.exists():
+            shutil.copy2(sp, get_thumbnail_path(user["id"], new_row["idx"], manual=manual))
+    return FileDetail(**_row_to_out(new_row).model_dump(), content=content)
+
+
+_PREVIEW_BYTES = 1500
+
+_NO_CACHE_HEADERS = {"Cache-Control": "no-cache, must-revalidate"}
+
+
+def _detect_image_media_type(data: bytes) -> str | None:
+    """Detect a thumbnail's image media type from its magic bytes.
+
+    Returns None if the bytes don't match a supported format. We only allow
+    formats every modern browser can render and that round-trip cleanly.
+    """
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data.startswith(b"GIF87a") or data.startswith(b"GIF89a"):
+        return "image/gif"
+    if len(data) >= 12 and data[0:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+@router.get("/{file_id}/preview", response_class=PlainTextResponse)
+def get_file_preview(file_id: str, user: dict | None = Depends(get_optional_user)):
+    with get_conn() as conn:
+        row = _require_readable_file(conn, file_id, user)
+    path = get_file_path(row["author_id"], row["idx"])
+    if not path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No preview",
+            headers=_NO_CACHE_HEADERS,
+        )
+    with path.open("rb") as f:
+        data = f.read(_PREVIEW_BYTES)
+    return PlainTextResponse(
+        data.decode("utf-8", errors="replace"),
+        headers=_NO_CACHE_HEADERS,
+    )
 
 
 @router.get("/{file_id}/thumbnail")
 def get_file_thumbnail(file_id: str, user: dict | None = Depends(get_optional_user)):
     with get_conn() as conn:
         row = _require_readable_file(conn, file_id, user)
-    path = get_thumbnail_path(row["author_id"], row["idx"])
-    if not path.exists():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No thumbnail")
-    return FileResponse(path, media_type="image/png")
+    manual_path = get_thumbnail_path(row["author_id"], row["idx"], manual=True)
+    auto_path = get_thumbnail_path(row["author_id"], row["idx"], manual=False)
+    if row["thumbnail_custom"] and manual_path.exists():
+        path = manual_path
+    elif auto_path.exists():
+        path = auto_path
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No thumbnail",
+            headers=_NO_CACHE_HEADERS,
+        )
+    # Auto thumbnails are always PNG (we generate them); for manual uploads we
+    # accept multiple formats but store as a generic `.manual.png` blob, so
+    # sniff the actual media type from the first bytes to serve the right
+    # Content-Type. Falls back to image/png if magic bytes are unrecognized
+    # (an old/legacy upload).
+    with path.open("rb") as f:
+        head = f.read(12)
+    media_type = _detect_image_media_type(head) or "image/png"
+    return FileResponse(path, media_type=media_type, headers=_NO_CACHE_HEADERS)
+
+
+@router.delete("/{file_id}/thumbnail", status_code=status.HTTP_204_NO_CONTENT)
+def delete_file_thumbnail(file_id: str, user: dict = Depends(get_current_user)):
+    with get_conn() as conn:
+        row = _require_file(conn, file_id, user["id"])
+        conn.execute(
+            "UPDATE files SET thumbnail_custom = 0 WHERE idx = ?",
+            (row["idx"],),
+        )
+    manual = get_thumbnail_path(user["id"], row["idx"], manual=True)
+    if manual.exists():
+        manual.unlink()
 
 
 @router.put("/{file_id}/thumbnail", status_code=status.HTTP_204_NO_CONTENT)
-async def save_file_thumbnail(file_id: str, request: Request, user: dict = Depends(get_current_user)):
+async def save_file_thumbnail(
+    file_id: str,
+    request: Request,
+    user: dict = Depends(get_current_user),
+    manual: bool = False,
+):
     content_type = request.headers.get("content-type", "")
     if not content_type.startswith("image/"):
         raise HTTPException(
@@ -247,6 +327,25 @@ async def save_file_thumbnail(file_id: str, request: Request, user: dict = Depen
     if len(body) > MAX_THUMBNAIL_BYTES:
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Thumbnail too large")
 
+    # For manual uploads, sniff actual image bytes — Content-Type can be
+    # spoofed and we don't want random binary masquerading as image/*.
+    # Auto thumbnails come from our own canvas → always PNG, no need to check.
+    if manual and _detect_image_media_type(body[:12]) is None:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Thumbnail must be PNG, JPEG, GIF, or WebP",
+        )
+
+    # Resolve file ownership first (read-only), then write to disk BEFORE
+    # committing the thumbnail_custom flag — that way a disk-write failure
+    # doesn't leave the DB pointing at a non-existent file.
     with get_conn() as conn:
         row = _require_file(conn, file_id, user["id"])
-    get_thumbnail_path(user["id"], row["idx"]).write_bytes(body)
+    target_path = get_thumbnail_path(user["id"], row["idx"], manual=manual)
+    target_path.write_bytes(body)
+    if manual:
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE files SET thumbnail_custom = 1 WHERE idx = ?",
+                (row["idx"],),
+            )

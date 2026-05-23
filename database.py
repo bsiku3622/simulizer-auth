@@ -19,10 +19,11 @@ def get_file_path(user_id: int, file_id: int) -> Path:
     return user_dir / str(file_id)
 
 
-def get_thumbnail_path(user_id: int, file_id: int) -> Path:
+def get_thumbnail_path(user_id: int, file_id: int, manual: bool = False) -> Path:
     user_dir = FILE_STORAGE_PATH / str(user_id)
     user_dir.mkdir(parents=True, exist_ok=True)
-    return user_dir / f"{file_id}.png"
+    suffix = ".manual.png" if manual else ".png"
+    return user_dir / f"{file_id}{suffix}"
 
 
 def _tables_exist(conn) -> bool:
@@ -44,6 +45,8 @@ _LEGACY_CHECKS: dict[str, "Callable"] = {
     "0001_initial": lambda conn: _tables_exist(conn),
     "0002_soft_delete": lambda conn: _column_exists(conn, "users", "deleted_at"),
     "0003_token_invalidation": lambda conn: _column_exists(conn, "users", "token_issued_at"),
+    "0004_file_type": lambda conn: _column_exists(conn, "files", "type"),
+    "0005_thumbnail_custom": lambda conn: _column_exists(conn, "files", "thumbnail_custom"),
 }
 
 
