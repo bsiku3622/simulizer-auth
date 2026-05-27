@@ -1,3 +1,4 @@
+import json
 import secrets
 import shutil
 import string
@@ -12,6 +13,35 @@ from schemas import (
     FileCreate, FileContentUpdate, FileDetail, FileOut, FileRename,
     FileVisibilityUpdate, MAX_THUMBNAIL_BYTES,
 )
+
+
+def _clangfile_entry_content(raw: str) -> str:
+    """Pull the entry file's source out of a clangfile JSON bundle.
+
+    Used by the preview endpoint so dashboard code snippets show actual C++
+    rather than the JSON wrapper. Falls back to the raw string for legacy rows
+    that haven't been migrated and for malformed bundles.
+    """
+    try:
+        bundle = json.loads(raw)
+    except Exception:
+        return raw
+    if not isinstance(bundle, dict) or bundle.get("version") != 1:
+        return raw
+    entry = bundle.get("entry")
+    if not isinstance(entry, str):
+        return raw
+    parts = entry.split("/")
+    nodes = bundle.get("tree", [])
+    for p in parts[:-1]:
+        match = next((n for n in nodes if isinstance(n, dict) and n.get("type") == "folder" and n.get("name") == p), None)
+        if not match:
+            return raw
+        nodes = match.get("contents", [])
+    leaf = next((n for n in nodes if isinstance(n, dict) and n.get("type") == "file" and n.get("name") == parts[-1]), None)
+    if not leaf:
+        return raw
+    return str(leaf.get("content", ""))
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -257,10 +287,19 @@ def get_file_preview(file_id: str, user: dict | None = Depends(get_optional_user
             detail="No preview",
             headers=_NO_CACHE_HEADERS,
         )
-    with path.open("rb") as f:
-        data = f.read(_PREVIEW_BYTES)
+    # For clangfile bundles we have to read the whole JSON to find the entry's
+    # content — slicing the first N bytes would corrupt the JSON. For block
+    # files we keep the byte-bounded read so giant workspaces don't blow the
+    # preview endpoint.
+    if row["type"] == "clangfile":
+        raw = path.read_text(encoding="utf-8", errors="replace")
+        text = _clangfile_entry_content(raw)[:_PREVIEW_BYTES]
+    else:
+        with path.open("rb") as f:
+            data = f.read(_PREVIEW_BYTES)
+        text = data.decode("utf-8", errors="replace")
     return PlainTextResponse(
-        data.decode("utf-8", errors="replace"),
+        text,
         headers=_NO_CACHE_HEADERS,
     )
 

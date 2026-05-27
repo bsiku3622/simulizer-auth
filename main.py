@@ -47,7 +47,7 @@ def health():
 @click.option('-p', '--port', default=6001, type=int, help='Port to run the server on')
 def main(port: int):
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=port, proxy_headers=True, forwarded_allow_ips="*")
+    uvicorn.run("main:app", reload=True, host="0.0.0.0", port=port, proxy_headers=True, forwarded_allow_ips="*")
 
 if __name__ == "__main__":
     main()
