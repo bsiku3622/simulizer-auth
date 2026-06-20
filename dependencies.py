@@ -1,10 +1,22 @@
+import secrets
 from datetime import datetime, timezone
 
-from fastapi import Cookie, HTTPException, status
+from fastapi import Cookie, Header, HTTPException, status
 from jose import JWTError
 
 from auth import decode_jwt, decode_recovery_jwt
+from config import SERVICE_SECRET
 from database import get_conn
+
+
+def require_service(x_service_secret: str | None = Header(default=None, alias="X-Service-Secret")) -> None:
+    """Guard internal service-to-service endpoints (e.g. AI server calls).
+
+    The caller must present the shared service secret. Identity of the acting
+    user is established separately via the forwarded user JWT.
+    """
+    if x_service_secret is None or not secrets.compare_digest(x_service_secret, SERVICE_SECRET):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid service credentials")
 
 
 def _resolve_user_from_token(token: str) -> dict:

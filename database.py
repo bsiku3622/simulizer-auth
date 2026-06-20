@@ -47,6 +47,7 @@ _LEGACY_CHECKS: dict[str, "Callable"] = {
     "0003_token_invalidation": lambda conn: _column_exists(conn, "users", "token_issued_at"),
     "0004_file_type": lambda conn: _column_exists(conn, "files", "type"),
     "0005_thumbnail_custom": lambda conn: _column_exists(conn, "files", "thumbnail_custom"),
+    "0006_credits": lambda conn: _column_exists(conn, "users", "credits"),
 }
 
 

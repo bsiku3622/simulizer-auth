@@ -87,3 +87,18 @@ class FileRename(BaseModel):
 
 class FileVisibilityUpdate(BaseModel):
     visibility: Literal["private", "link"]
+
+
+class CreditOut(BaseModel):
+    credits: int
+
+
+class CreditAmount(BaseModel):
+    amount: int
+
+    @field_validator("amount")
+    @classmethod
+    def validate_amount(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("amount must be a positive integer")
+        return v

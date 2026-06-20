@@ -11,7 +11,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from database import run_migrations
-from routers import auth, files
+from routers import auth, credits, files
 
 
 
@@ -37,6 +37,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(files.router)
+app.include_router(credits.router)
 
 
 @app.head("/health")

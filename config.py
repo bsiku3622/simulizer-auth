@@ -4,6 +4,7 @@ from pathlib import Path
 GOOGLE_CLIENT_ID: str = os.environ["GOOGLE_CLIENT_ID"]
 GOOGLE_CLIENT_SECRET: str = os.environ["GOOGLE_CLIENT_SECRET"]
 JWT_SECRET: str = os.environ["JWT_SECRET"]
+SERVICE_SECRET: str = os.environ["SERVICE_SECRET"]
 BACKEND_URL: str = os.environ["BACKEND_URL"]
 DEV_BACKEND_URL: str = os.getenv("DEV_BACKEND_URL") or BACKEND_URL
 FRONTEND_URL: str = os.environ["FRONTEND_URL"]

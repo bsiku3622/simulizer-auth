@@ -59,6 +59,7 @@ python main.py                 # Runs on http://localhost:8001
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
 | `JWT_SECRET` | Secret key for signing JWT cookies |
+| `SERVICE_SECRET` | Shared secret for internal service-to-service calls (AI server → credit `plus`/`minus` endpoints) |
 | `FRONTEND_URL` | Allowed CORS origin (e.g. `http://localhost:3000`) |
 | `BACKEND_URL` | This server's public URL |
 | `DB_PATH` | SQLite database file path |
