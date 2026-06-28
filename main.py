@@ -29,7 +29,7 @@ app.add_middleware(SlowAPIMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:6001", "http://localhost:8001", "https://simulizer.net", "https://www.simulizer.net", "https://auth.simulizer.net"],
+    allow_origins=["http://localhost:3000", "http://localhost:7001", "http://localhost:8001", "https://simulizer.net", "https://www.simulizer.net", "https://auth.simulizer.net"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -45,7 +45,7 @@ def health():
     return {"status": "ok"}
 
 @click.command()
-@click.option('-p', '--port', default=6001, type=int, help='Port to run the server on')
+@click.option('-p', '--port', default=7001, type=int, help='Port to run the server on')
 def main(port: int):
     import uvicorn
     uvicorn.run("main:app", reload=True, host="0.0.0.0", port=port, proxy_headers=True, forwarded_allow_ips="*")

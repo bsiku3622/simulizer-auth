@@ -1,7 +1,13 @@
+# Simulizer Auth backend — Python dependencies.
+# Regenerated from the actual imports across main.py / auth.py / database.py /
+# dependencies.py / routers / scripts / migrations.
+
 fastapi
 uvicorn[standard]
+pydantic
 python-jose[cryptography]
 httpx
 python-dotenv
 yoyo-migrations
 slowapi
+click
